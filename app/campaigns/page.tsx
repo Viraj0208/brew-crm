@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { campaigns, segments } from "@/lib/db/schema";
@@ -49,7 +50,11 @@ export default async function CampaignsPage() {
           <tbody className="divide-y divide-stone-100">
             {rows.map((c) => (
               <tr key={c.id} className="hover:bg-stone-50">
-                <td className="px-4 py-3 font-medium">{c.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  <Link href={`/campaigns/${c.id}`} className="text-stone-900 hover:underline">
+                    {c.name}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-stone-500">{c.segmentName ?? "—"}</td>
                 <td className="px-4 py-3 text-stone-500">{c.channel}</td>
                 <td className="px-4 py-3">
