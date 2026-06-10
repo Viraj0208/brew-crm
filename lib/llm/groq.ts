@@ -89,6 +89,7 @@ export class GroqProvider implements LlmProvider {
   async chat({ systemInstruction, messages, tools }: ChatArgs): Promise<LlmTurn> {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
+      signal: AbortSignal.timeout(50_000),
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${this.apiKey}`,

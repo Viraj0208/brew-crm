@@ -1,4 +1,5 @@
 import { getLlm } from "@/lib/llm";
+import { LlmError } from "@/lib/llm/provider";
 import type { CanonicalMessage, LlmProvider, ToolDef } from "@/lib/llm/provider";
 import { TOOL_DEFS, TOOL_EXECUTORS } from "./tools";
 import { PLAN_SYSTEM } from "./prompts";
@@ -100,6 +101,18 @@ export async function runPlan(goal: string, llm: LlmProvider = getLlm()): Promis
     break;
   }
 
+  // A blank final turn (model returned neither tools nor text, or the step cap
+  // hit with nothing extracted) must NOT become an empty plan stuck in
+  // awaiting_approval — surface it as a model failure the route can 502.
+  if (!rawPlanText.trim()) {
+    throw new LlmError("model returned an empty plan", "bad_output");
+  }
   const plan = extractJson(rawPlanText) as PlanJson;
+  if (!plan.segment_id || !plan.message_template || !plan.channel) {
+    throw new LlmError(
+      `model plan missing required fields (segment_id/channel/message_template): ${rawPlanText.slice(0, 200)}`,
+      "bad_output",
+    );
+  }
   return { plan, trace, rawPlanText };
 }

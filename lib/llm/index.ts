@@ -17,9 +17,12 @@ function build(name: string): LlmProvider | null {
 }
 
 /**
- * Provider with automatic failover. Primary = LLM_PROVIDER (default gemini);
- * on a SAFETY blank or rate_limit, reprompt once then fall back to LLM_FALLBACK
- * (default groq) if its key is configured. One canonical interface throughout.
+ * Provider with automatic failover. Primary = LLM_PROVIDER (default gemini).
+ * On a SAFETY blank: reprompt the primary once (safety blanks are usually
+ * transient phrasing), then fall back. On rate_limit: go STRAIGHT to the
+ * fallback — an immediate identical retry against a rate-limited provider just
+ * burns a round-trip on a guaranteed second 429. Fallback = LLM_FALLBACK
+ * (default groq) when its key is configured.
  */
 export function getLlm(): LlmProvider {
   const primaryName = process.env.LLM_PROVIDER ?? "gemini";
@@ -36,11 +39,20 @@ export function getLlm(): LlmProvider {
       try {
         return await primary.chat(args);
       } catch (err) {
-        const soft = err instanceof LlmError && (err.kind === "safety" || err.kind === "rate_limit");
-        if (soft) {
-          // one reprompt on the primary
+        // AbortSignal.timeout fires a DOMException("TimeoutError") — a hung
+        // primary is as good a reason to fail over as a 429.
+        if (err instanceof Error && err.name === "TimeoutError") {
+          if (fallback) return fallback.chat(args);
+          throw new LlmError(`${primary.name} timed out`, "transport");
+        }
+        if (!(err instanceof LlmError)) throw err;
+        if (err.kind === "rate_limit") {
+          if (fallback) return fallback.chat(args);
+          throw err;
+        }
+        if (err.kind === "safety") {
           try {
-            return await primary.chat(args);
+            return await primary.chat(args); // one reprompt
           } catch {
             if (fallback) return fallback.chat(args);
           }

@@ -65,12 +65,27 @@ describe("runPlan loop", () => {
       text: "",
       toolCalls: [{ name: "pick_channel", args: { segment_summary: "x" } }],
     };
-    const finalPlan: LlmTurn = { text: '```json\n{"channel":"sms"}\n```', toolCalls: [] };
+    const finalPlan: LlmTurn = {
+      text: '```json\n{"segment_id":"seg-9","channel":"sms","message_template":"Hi {{name}}"}\n```',
+      toolCalls: [],
+    };
     // 8 tool-calling turns exhaust the budget; the 9th call (tools dropped)
     // returns the final plan. The mock clamps to the last turn thereafter.
     const mock = new MockProvider([...Array(8).fill(looping), finalPlan]);
     const { plan, trace } = await runPlan("test budget", mock);
     expect(trace.filter((t) => t.tool === "pick_channel").length).toBeLessThanOrEqual(8);
     expect(plan.channel).toBe("sms");
+  });
+
+  it("throws bad_output on a blank final turn instead of returning an empty plan", async () => {
+    const mock = new MockProvider([{ text: "", toolCalls: [] }]);
+    await expect(runPlan("test empty", mock)).rejects.toThrow(/empty plan/);
+  });
+
+  it("throws bad_output when the plan is missing required fields", async () => {
+    const mock = new MockProvider([
+      { text: '```json\n{"channel":"sms"}\n```', toolCalls: [] },
+    ]);
+    await expect(runPlan("test partial", mock)).rejects.toThrow(/missing required fields/);
   });
 });

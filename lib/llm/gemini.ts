@@ -77,6 +77,9 @@ export class GeminiProvider implements LlmProvider {
 
     const res = await fetch(url, {
       method: "POST",
+      // Cap below the plan route's 60s maxDuration: a hung Gemini call must
+      // fail fast enough for the fallback provider to still get a turn.
+      signal: AbortSignal.timeout(50_000),
       headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey },
       body: JSON.stringify(body),
     });
