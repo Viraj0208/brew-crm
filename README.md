@@ -56,7 +56,7 @@ alongside it and set `CHANNEL_URL` + matching `WORKER_SECRET`.
 | `DATABASE_URL` | Neon **pooled** connection string |
 | `CHANNEL_URL` | base URL of the channel service |
 | `CRM_PUBLIC_URL` | this app's public URL (callbacks + worker kick) |
-| `WORKER_SECRET` | shared secret guarding `/worker` and the channel `/send` |
+| `WORKER_SECRET` | shared secret guarding `/worker`, the channel `/send`, and inbound `/api/receipts` callbacks |
 | `CRON_SECRET` | on Vercel, set equal to `WORKER_SECRET` (Cron sends it as Bearer) |
 | `LLM_PROVIDER` | `gemini` (default) |
 | `GEMINI_API_KEY` / `GEMINI_MODEL` | free AI Studio key · `gemini-2.0-flash` |
@@ -65,6 +65,11 @@ alongside it and set `CHANNEL_URL` + matching `WORKER_SECRET`.
 
 **Runtime LLM is locked to Gemini free (Groq free fallback).** Claude/OpenAI are
 dev-time build tools only — never imported into shipped code. The product runs $0.
+
+**Deploy order:** `/api/receipts` fails closed and requires the `x-worker-secret`
+header. Deploy **brew-channel first** (it sends the header, which an older CRM
+simply ignores), then brew-crm (which enforces it). Enforcing before the sender
+signs would 401 every in-flight callback into the channel's dead log.
 
 ## Demo script (≈90s)
 

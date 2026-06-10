@@ -65,7 +65,9 @@ export class GeminiProvider implements LlmProvider {
   ) {}
 
   async chat({ systemInstruction, messages, tools }: ChatArgs): Promise<LlmTurn> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    // Key goes in a header, not a ?key= query param — URLs land in access/proxy
+    // logs; headers don't.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
     const body = {
       systemInstruction: { parts: [{ text: systemInstruction }] },
       contents: toContents(messages),
@@ -75,7 +77,7 @@ export class GeminiProvider implements LlmProvider {
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey },
       body: JSON.stringify(body),
     });
 

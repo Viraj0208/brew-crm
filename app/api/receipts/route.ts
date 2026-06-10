@@ -20,8 +20,22 @@ const VALID_TYPES: CommEventType[] = ["delivered", "failed", "opened", "read", "
  *    false) but never regress state (see stateMachine.applyEvent).
  *  - Poison-tolerant: malformed/unknown payloads go to dead_letter and STILL
  *    return 200 — we never make the channel retry a poison event forever.
+ *  - Authenticated: the channel signs every callback with x-worker-secret
+ *    (same shared secret as /send). Without it, anyone who finds this URL could
+ *    forge clicked events and inflate funnel + attribution. Fails CLOSED — a
+ *    missing WORKER_SECRET is a 500 misconfig (same as /worker), never an open
+ *    door. 401/500 (not dead_letter) — auth failure is a misconfig to surface,
+ *    not a poison payload.
  */
 export async function POST(req: Request) {
+  const secret = process.env.WORKER_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: "WORKER_SECRET not configured" }, { status: 500 });
+  }
+  if (req.headers.get("x-worker-secret") !== secret) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json().catch(() => null);
 
   const eventId = body?.event_id;
