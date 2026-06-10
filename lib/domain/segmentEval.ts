@@ -186,4 +186,30 @@ export async function evaluateSegment(
   return { memberCount, sample };
 }
 
+export type SegmentMember = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  preferredChannel: "whatsapp" | "sms" | "email" | null;
+};
+
+/**
+ * Full member list for materializing a send (no sample cap). Same opt-out
+ * guardrail as evaluateSegment — opted-out customers are never returned.
+ */
+export async function segmentMembers(ruleJson: unknown): Promise<SegmentMember[]> {
+  const where = sql`(${customers.marketingOptIn} = true) and (${compile(ruleJson as Rule)})`;
+  return (await db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      email: customers.email,
+      phone: customers.phone,
+      preferredChannel: customers.preferredChannel,
+    })
+    .from(customers)
+    .where(where)) as SegmentMember[];
+}
+
 export { RuleError };
