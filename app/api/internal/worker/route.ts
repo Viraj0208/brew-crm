@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
-import { claimBatch, markFailed, markSent } from "@/lib/queue/outbox";
+import { drainOutbox } from "@/lib/queue/worker";
 
 export const dynamic = "force-dynamic";
 // Allow a generous window — a batch of channel POSTs can take a few seconds.
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 /**
  * Outbox drainer. Invoked two ways:
- *   1. Vercel Cron (GET, every minute) — see vercel.json.
- *   2. A kick right after POST /campaigns/:id/send (POST) for snappy demos.
+ *   1. Vercel Cron (GET, daily backstop) — see vercel.json.
+ *   2. An authed kick (POST) — fallback path.
  *
- * Shared-secret guarded: accepts `Authorization: Bearer <WORKER_SECRET>`
- * (Vercel Cron form) OR `x-worker-secret: <WORKER_SECRET>` (the internal kick).
+ * The primary drain trigger is the campaign send route itself (via waitUntil),
+ * so this route is a safety net. Shared-secret guarded: accepts
+ * `Authorization: Bearer <WORKER_SECRET>` (Vercel Cron form) OR
+ * `x-worker-secret: <WORKER_SECRET>`.
  */
 async function drain(req: Request): Promise<Response> {
   const secret = process.env.WORKER_SECRET;
@@ -25,49 +27,13 @@ async function drain(req: Request): Promise<Response> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const channelUrl = process.env.CHANNEL_URL;
-  const baseUrl = process.env.CRM_PUBLIC_URL;
-  if (!channelUrl || !baseUrl) {
-    return NextResponse.json(
-      { error: "CHANNEL_URL and CRM_PUBLIC_URL must be set" },
-      { status: 500 },
-    );
+  try {
+    const result = await drainOutbox();
+    return NextResponse.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-  const callbackUrl = `${baseUrl.replace(/\/$/, "")}/api/receipts`;
-
-  const claimed = await claimBatch(25);
-  let sent = 0;
-  let retry = 0;
-  let dead = 0;
-
-  for (const c of claimed) {
-    try {
-      const res = await fetch(`${channelUrl.replace(/\/$/, "")}/send`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-worker-secret": secret },
-        body: JSON.stringify({
-          comm_id: c.communicationId,
-          recipient: c.recipient,
-          message: c.message,
-          channel: c.channel,
-          callback_url: callbackUrl,
-        }),
-      });
-      if (res.status === 202 || res.ok) {
-        await markSent(c.outboxId);
-        sent++;
-      } else {
-        throw new Error(`channel responded ${res.status}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const { dead: isDead } = await markFailed(c, msg);
-      if (isDead) dead++;
-      else retry++;
-    }
-  }
-
-  return NextResponse.json({ claimed: claimed.length, sent, retry, dead });
 }
 
 export const GET = drain;

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { campaigns, communications, segments } from "@/lib/db/schema";
 import { segmentMembers, type SegmentMember } from "@/lib/domain/segmentEval";
 import { enqueue } from "@/lib/queue/outbox";
+import { drainOutbox } from "@/lib/queue/worker";
 
 export const dynamic = "force-dynamic";
 
@@ -75,15 +77,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   await enqueue(commIds);
 
-  // Best-effort kick — don't block the 202 on it.
-  const base = process.env.CRM_PUBLIC_URL;
-  const secret = process.env.WORKER_SECRET;
-  if (base && secret) {
-    void fetch(`${base.replace(/\/$/, "")}/api/internal/worker`, {
-      method: "POST",
-      headers: { "x-worker-secret": secret },
-    }).catch(() => {});
-  }
+  // Drain in the background AFTER the 202. waitUntil keeps the serverless
+  // function alive until the drain settles — a plain fire-and-forget fetch gets
+  // killed when the function freezes after the response.
+  waitUntil(drainOutbox().catch(() => {}));
 
   return NextResponse.json({ accepted: true, enqueued: commIds.length }, { status: 202 });
 }
