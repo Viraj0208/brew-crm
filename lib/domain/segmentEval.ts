@@ -50,6 +50,10 @@ function isCombinator(r: Rule): r is { and: Rule[] } | { or: Rule[] } | { not: R
 }
 
 /** Compile a rule (sub)tree into a SQL boolean expression over the `customers` row. */
+export function compileRule(rule: unknown): SQL {
+  return compile(rule as Rule);
+}
+
 function compile(rule: Rule): SQL {
   if (rule == null || typeof rule !== "object") {
     throw new RuleError("rule node must be an object");
