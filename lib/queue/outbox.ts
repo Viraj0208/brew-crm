@@ -40,13 +40,21 @@ export interface ClaimedSend {
   channel: "whatsapp" | "sms" | "email";
 }
 
+/** Anything that can run an insert — the db or a transaction handle. */
+type DbExecutor = Pick<typeof db, "insert">;
+
 /**
  * Enqueue one pending outbox row per communication. Idempotent at the caller's
  * discretion — communications are created once per (campaign, customer).
+ * Pass the transaction handle when the comms are created in the same tx, so a
+ * crash can never commit communications without their outbox rows.
  */
-export async function enqueue(communicationIds: string[]): Promise<void> {
+export async function enqueue(
+  communicationIds: string[],
+  dbx: DbExecutor = db,
+): Promise<void> {
   if (communicationIds.length === 0) return;
-  await db
+  await dbx
     .insert(outbox)
     .values(communicationIds.map((communicationId) => ({ communicationId })));
 }

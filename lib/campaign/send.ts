@@ -62,9 +62,13 @@ export async function dispatchCampaign(campaignId: string): Promise<DispatchResu
       )
       .returning({ id: communications.id });
     await tx.update(campaigns).set({ status: "live" }).where(eq(campaigns.id, campaign.id));
-    return inserted.map((r) => r.id);
+    const ids = inserted.map((r) => r.id);
+    // Enqueue INSIDE the same tx: a crash here rolls everything back. Committing
+    // comms + a live campaign with an empty outbox would strand the campaign —
+    // queued comms no worker would ever pick up.
+    await enqueue(ids, tx);
+    return ids;
   });
 
-  await enqueue(commIds);
   return { ok: true, enqueued: commIds.length };
 }
