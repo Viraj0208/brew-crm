@@ -1,11 +1,16 @@
-import { claimBatch, markFailed, markSent } from "./outbox";
+import { claimBatch, markFailed, markSent, resetStuckInflight } from "./outbox";
 
 export interface DrainResult {
   claimed: number;
   sent: number;
   retry: number;
   dead: number;
+  /** Rows released by the inflight watchdog before this drain. */
+  released: number;
 }
+
+/** Per-send timeout: a hung channel must not eat the route's whole maxDuration. */
+const SEND_TIMEOUT_MS = 10_000;
 
 /**
  * Drain due outbox rows: claim a batch, POST each to the channel /send, then
@@ -23,6 +28,7 @@ export async function drainOutbox(): Promise<DrainResult> {
   const callbackUrl = `${baseUrl.replace(/\/$/, "")}/api/receipts`;
   const sendUrl = `${channelUrl.replace(/\/$/, "")}/send`;
 
+  const released = await resetStuckInflight();
   const claimed = await claimBatch(25);
   let sent = 0;
   let retry = 0;
@@ -32,6 +38,7 @@ export async function drainOutbox(): Promise<DrainResult> {
     try {
       const res = await fetch(sendUrl, {
         method: "POST",
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         headers: { "content-type": "application/json", "x-worker-secret": secret },
         body: JSON.stringify({
           comm_id: c.communicationId,
@@ -55,5 +62,5 @@ export async function drainOutbox(): Promise<DrainResult> {
     }
   }
 
-  return { claimed: claimed.length, sent, retry, dead };
+  return { claimed: claimed.length, sent, retry, dead, released };
 }

@@ -101,6 +101,23 @@ export async function claimBatch(limit = 25): Promise<ClaimedSend[]> {
   });
 }
 
+/**
+ * Watchdog: release rows stuck `inflight` (a worker crashed or hit maxDuration
+ * mid-batch). A claimed row's next_attempt_at was <= now at claim time, so an
+ * inflight row whose next_attempt_at is older than the grace window has no
+ * live worker — flip it back to pending for re-claim. At-least-once is safe:
+ * the channel dedupes on comm_id. Runs at the top of every drain.
+ */
+export async function resetStuckInflight(graceMs = 5 * 60 * 1000): Promise<number> {
+  const cutoff = new Date(Date.now() - graceMs);
+  const res = await db
+    .update(outbox)
+    .set({ status: "pending", lastError: "released by inflight watchdog" })
+    .where(sql`${outbox.status} = 'inflight' AND ${outbox.nextAttemptAt} < ${cutoff}`)
+    .returning({ id: outbox.id });
+  return res.length;
+}
+
 /** Mark a claimed row delivered-to-channel. The lifecycle now runs over /receipts. */
 export async function markSent(outboxId: string): Promise<void> {
   await db.update(outbox).set({ status: "sent", lastError: null }).where(eq(outbox.id, outboxId));

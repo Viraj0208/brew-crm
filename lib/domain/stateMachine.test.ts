@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyEvent, STATE_RANK, type CommState } from "./stateMachine";
+import { applyEvent, FAILED_RANK, STATE_RANK, type CommState } from "./stateMachine";
 
 describe("applyEvent — forward advance", () => {
   it("sent → delivered advances", () => {
@@ -42,6 +42,22 @@ describe("applyEvent — out-of-order (monotonic guard)", () => {
       applied: true,
     });
   });
+
+  it("delivered arriving while still queued advances (gap-fill from zero)", () => {
+    expect(applyEvent("queued", "delivered")).toEqual({
+      state: "delivered",
+      rank: 2,
+      applied: true,
+    });
+  });
+
+  it("opened arriving before delivered advances (skips a ladder step)", () => {
+    expect(applyEvent("sent", "opened")).toEqual({
+      state: "opened",
+      rank: 3,
+      applied: true,
+    });
+  });
 });
 
 describe("applyEvent — duplicates are no-ops", () => {
@@ -58,7 +74,7 @@ describe("applyEvent — failed branch", () => {
   it("applies from queued", () => {
     expect(applyEvent("queued", "failed")).toEqual({
       state: "failed",
-      rank: 2,
+      rank: FAILED_RANK,
       applied: true,
     });
   });
@@ -76,19 +92,24 @@ describe("applyEvent — failed branch", () => {
     expect(applyEvent("opened", "failed").applied).toBe(false);
   });
 
-  it("delivered does NOT overtake failed (equal rank, branch)", () => {
+  it("delivered does NOT overtake failed (terminal branch)", () => {
     expect(applyEvent("failed", "delivered").applied).toBe(false);
   });
 
   it("failed is terminal — opened cannot resurrect it", () => {
     const r = applyEvent("failed", "opened");
-    expect(r).toEqual({ state: "failed", rank: 2, applied: false });
+    expect(r).toEqual({ state: "failed", rank: FAILED_RANK, applied: false });
+  });
+
+  it("failed is terminal — even clicked cannot resurrect it", () => {
+    expect(applyEvent("failed", "clicked").applied).toBe(false);
   });
 });
 
 describe("STATE_RANK invariants", () => {
-  it("failed and delivered share rank 2", () => {
-    expect(STATE_RANK.failed).toBe(STATE_RANK.delivered);
+  it("failed is an off-ladder sentinel, never comparable to success ranks", () => {
+    expect(STATE_RANK.failed).toBe(FAILED_RANK);
+    expect(FAILED_RANK).toBeLessThan(STATE_RANK.queued);
   });
 
   it("ranks are strictly increasing along the success path", () => {

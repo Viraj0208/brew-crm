@@ -20,13 +20,20 @@ export type CommState =
 
 export type CommEventType = "delivered" | "failed" | "opened" | "read" | "clicked";
 
-// Numeric rank — note failed and delivered share rank 2 (failed is a branch off
-// sent and cannot be overtaken by, nor overtake, delivered).
+// Numeric rank for the SUCCESS ladder. `failed` is deliberately OFF the ladder
+// (sentinel -1): it is a terminal branch off queued/sent, handled exclusively
+// by the two explicit guards in applyEvent below — never by the generic
+// monotonic rank comparison. Giving it a ladder rank (it used to share 2 with
+// delivered) made the generic guard accidentally load-bearing for failed
+// semantics; the sentinel makes "you must handle failed explicitly" impossible
+// to miss.
+export const FAILED_RANK = -1;
+
 export const STATE_RANK: Record<CommState, number> = {
   queued: 0,
   sent: 1,
   delivered: 2,
-  failed: 2,
+  failed: FAILED_RANK,
   opened: 3,
   read: 4,
   clicked: 5,
@@ -62,11 +69,13 @@ export function applyEvent(current: CommState, event: CommEventType): ApplyResul
     return { state: "failed", rank: currentRank, applied: false };
   }
 
-  // `failed` only applies from rank ≤ 1 (queued/sent). Arriving after the
-  // message was already delivered/opened/… it is stale → recorded, not applied.
+  // `failed` only applies from queued/sent (compare state names, not ranks —
+  // the guard must not silently shift if the ladder is ever renumbered).
+  // Arriving after the message was already delivered/opened/… it is stale →
+  // recorded, not applied.
   if (event === "failed") {
-    if (currentRank <= STATE_RANK.sent) {
-      return { state: "failed", rank: STATE_RANK.failed, applied: true };
+    if (current === "queued" || current === "sent") {
+      return { state: "failed", rank: FAILED_RANK, applied: true };
     }
     return { state: current, rank: currentRank, applied: false };
   }
