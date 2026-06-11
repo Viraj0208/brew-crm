@@ -2,6 +2,8 @@ import Link from "next/link";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { customers, orders, segments, campaigns } from "@/lib/db/schema";
+import AnimatedStat from "@/components/AnimatedStat";
+import StaggerIn, { StaggerItem } from "@/components/StaggerIn";
 
 export const dynamic = "force-dynamic";
 
@@ -39,32 +41,30 @@ export default async function Dashboard() {
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-stone-200 bg-white p-4">
-            <div className="text-3xl font-semibold">{s.value}</div>
-            <div className="mt-1 text-sm text-stone-500">{s.label}</div>
-          </div>
+          <AnimatedStat key={s.label} label={s.label} value={s.value} />
         ))}
       </section>
 
       <section>
         <h2 className="text-lg font-semibold">Seed segments</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <StaggerIn className="mt-3 grid gap-3 sm:grid-cols-3">
           {segRows.map((s) => (
-            <Link
-              key={s.id}
-              href="/segments"
-              className="rounded-lg border border-stone-200 bg-white p-4 hover:border-amber-300"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{s.name}</span>
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                  {s.memberCount}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-stone-500">{s.description}</p>
-            </Link>
+            <StaggerItem key={s.id}>
+              <Link
+                href="/segments"
+                className="block h-full rounded-lg border border-stone-200 bg-white p-4 hover:border-amber-300"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{s.name}</span>
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                    {s.memberCount}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-stone-500">{s.description}</p>
+              </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerIn>
       </section>
     </div>
   );
